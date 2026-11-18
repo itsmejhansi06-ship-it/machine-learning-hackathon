@@ -1,0 +1,11 @@
+PathSnap EDA summary
+Trips analysed: 90
+Training trips: 80
+Student-test trips: 10
+GPS observations total: 227577
+Track NaN cells: 0
+Duplicate GPS rows: 0
+Non-increasing timestamp steps: 0
+Trips with route discontinuities: 11
+Mean route consecutive connectivity (%): 99.939
+Note: the suggested UTM EPSG is calculated per trip; do not apply one zone to the entire dataset.

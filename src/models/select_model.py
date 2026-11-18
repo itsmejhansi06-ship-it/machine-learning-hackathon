@@ -19,7 +19,7 @@ wins = per_trip.drop("MEAN").idxmax(axis=1).value_counts()
 print("\nTrips where each model had the best Top-1:\n", wins)
 
 per_trip.drop("MEAN").plot.box(figsize=(9, 4), rot=20)
-plt.title("Student-test Top-1 per trip (10 trips)"); plt.ylabel("Top-1 accuracy")
+plt.title("Student-test Top-1 per trip"); plt.ylabel("Top-1 accuracy")
 plt.tight_layout(); plt.savefig("results/plots/12_per_trip_top1.png", dpi=150)
 
 # ranking used for the selection decision

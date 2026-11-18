@@ -1,0 +1,26 @@
+{
+  "model": "GradBoost_tuned",
+  "family": "HistGradientBoostingClassifier (sklearn)",
+  "params": {
+    "learning_rate": 0.050853577072981444,
+    "max_iter": 400,
+    "max_leaf_nodes": 39,
+    "min_samples_leaf": 200,
+    "l2_regularization": 7.347126364510966,
+    "max_features": 0.9777728642483114,
+    "early_stopping": false
+  },
+  "seed": 42,
+  "selection_metric": "student-test observation-level Top-1 accuracy (secondary: log loss)",
+  "student_test": {
+    "top1": 0.8055323590814196,
+    "macro_f1": 0.8780929644990654,
+    "log_loss": 0.17177319297762775,
+    "continuity": 0.7062256809338522
+  },
+  "candidate_generation": {
+    "radius_m": 50,
+    "max_candidates": 8,
+    "crs": "EPSG:32636"
+  }
+}

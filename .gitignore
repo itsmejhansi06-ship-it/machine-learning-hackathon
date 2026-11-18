@@ -1,3 +1,4 @@
+
 # macOS
 .DS_Store
 
@@ -8,11 +9,13 @@ PathSnap/.venv/
 # Python cache
 __pycache__/
 *.pyc
+*.pyo
 
 # Environment variables
 .env
 
 # Local datasets
+data/
 Student folder/
 PathSnap/
 

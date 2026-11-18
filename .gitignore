@@ -1,10 +1,17 @@
-.DS_Store
-.venv/
+# Python cache files
 __pycache__/
+*.py[cod]
+
+# Virtual environment
+.venv/
+
+# Dataset files
+data/
+
+# Other generated and local files
+.DS_Store
 *.pyc
 .env
-
-# Local datasets and generated files
 Student folder/
 results/api.log
 results/*_eda_map.html

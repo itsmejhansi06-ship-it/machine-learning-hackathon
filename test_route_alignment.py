@@ -1,9 +1,17 @@
+import pytest
 
 from src.data_loader import load_trip
 from src.preprocessing.coordinates import project_trip
 from src.preprocessing.road_network import build_arc_geometries
 from src.preprocessing.route_alignment import align_route_to_track
 
+@pytest.mark.parametrize(
+    "trip_id, split",
+    [
+        ("00000001", "train"),
+        ("00000000", "student_test"),
+    ]
+)
 
 def test_alignment(trip_id, split):
     print("\n" + "=" * 55)

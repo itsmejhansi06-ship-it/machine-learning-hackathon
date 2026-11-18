@@ -1,3 +1,4 @@
+import pytest
 
 from src.data_loader import load_trip, get_trip_ids
 from src.preprocessing.coordinates import project_trip
@@ -7,6 +8,13 @@ from src.preprocessing.route_alignment import align_route_to_track
 from src.features.labels import attach_candidate_labels
 from src.features.feature_engineering import add_candidate_features
 
+@pytest.mark.parametrize(
+    "trip_id, split",
+    [
+        ("00000001", "train"),
+        ("00000000", "student_test"),
+    ]
+)
 
 def test_feature_pipeline(trip_id, split):
     print("\n" + "=" * 65)

@@ -1,3 +1,4 @@
+import pytest
 
 from src.data_loader import load_trip, get_trip_ids
 from src.preprocessing.coordinates import project_trip
@@ -7,6 +8,13 @@ from src.preprocessing.road_network import (
 )
 from src.preprocessing.candidates import build_candidates
 
+@pytest.mark.parametrize(
+    "trip_id, split",
+    [
+        ("00000001", "train"),
+        ("00000000", "student_test"),
+    ]
+)
 
 def test_trip(trip_id, split):
 

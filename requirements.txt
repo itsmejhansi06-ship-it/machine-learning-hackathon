@@ -1,9 +1,18 @@
+# Core data processing
 numpy
 pandas
+pyarrow
+
+# Geospatial processing
 pyproj
 shapely>=2.0
+
+# Machine learning
 scikit-learn
-pyarrow
+scipy
+networkx
+optuna
+
+# Visualisation
 matplotlib
 folium
-networkx

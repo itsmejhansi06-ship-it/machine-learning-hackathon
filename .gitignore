@@ -5,6 +5,7 @@ venv/
 # Python cache
 __pycache__/
 *.py[cod]
+*.pyc
 
 # Raw datasets - do not upload
 data/raw/
@@ -16,6 +17,16 @@ data/raw/
 .vscode/
 .idea/
 
+# Environment secrets
+.env
+
 # OS files
 .DS_Store
 Thumbs.db
+
+# Local dataset folders
+Student folder/
+
+# Generated logs and EDA maps
+results/api.log
+results/*_eda_map.html

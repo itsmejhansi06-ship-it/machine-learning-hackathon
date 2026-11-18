@@ -1,0 +1,10 @@
+.DS_Store
+.venv/
+__pycache__/
+*.pyc
+.env
+
+# Local datasets and generated files
+Student folder/
+results/api.log
+results/*_eda_map.html

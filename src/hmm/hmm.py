@@ -1,5 +1,7 @@
 
 import math
+import time
+
 import pandas as pd
 from shapely.geometry import Point
 
@@ -34,37 +36,17 @@ def map_match_trip(
     """
     Perform HMM-based map matching for one GPS trip.
 
-    Args:
-        trip:
-            Dictionary returned by load_trip().
-
-        cand_df:
-            Candidate DataFrame. If None, candidates are generated.
-
-        k:
-            Maximum number of candidate arcs per observation.
-
-        radius:
-            Candidate search radius in metres.
-
-        sigma:
-            Gaussian emission standard deviation.
-
-        beta:
-            Transition probability parameter.
-
-        max_distance_m:
-            Maximum allowed road-network transition distance.
-
     Returns:
-        DataFrame containing:
-            obs_idx
-            predicted_arc_id
+        DataFrame containing obs_idx and predicted_arc_id.
     """
+
+    total_start = time.time()
 
     # --------------------------------------------------
     # STEP 1: Generate candidates
     # --------------------------------------------------
+
+    print("\n[HMM] Generating candidates...", flush=True)
 
     if cand_df is None:
         cand_df = build_candidates(
@@ -76,7 +58,6 @@ def map_match_trip(
     if cand_df.empty:
         raise ValueError("No candidate road arcs were generated.")
 
-    # Sort candidates by observation and distance rank.
     cand_df = cand_df.sort_values(
         ["obs_idx", "distance_rank"]
     ).copy()
@@ -85,7 +66,6 @@ def map_match_trip(
 
     observation_ids = track["obs_idx"].astype(int).tolist()
 
-    # Ensure every GPS observation has at least one candidate.
     candidate_observations = set(
         cand_df["obs_idx"].astype(int)
     )
@@ -102,12 +82,19 @@ def map_match_trip(
             f"{missing_observations[:10]}"
         )
 
+    print(
+        f"[HMM] Observations: {len(observation_ids)}, "
+        f"candidate rows: {len(cand_df)}",
+        flush=True
+    )
+
     # --------------------------------------------------
-    # STEP 2: Prepare candidate states for each observation
+    # STEP 2: Prepare candidate states
     # --------------------------------------------------
+
+    print("[HMM] Preparing candidate states...", flush=True)
 
     states_by_time = []
-
     candidates_by_time = []
 
     for obs_id in observation_ids:
@@ -123,14 +110,13 @@ def map_match_trip(
         )
 
         states_by_time.append(states)
-
-        candidates_by_time.append(
-            observation_candidates
-        )
+        candidates_by_time.append(observation_candidates)
 
     # --------------------------------------------------
-    # STEP 3: Calculate Gaussian emission log probabilities
+    # STEP 3: Calculate emission probabilities
     # --------------------------------------------------
+
+    print("[HMM] Calculating emission probabilities...", flush=True)
 
     emission_log_probs = []
 
@@ -141,7 +127,6 @@ def map_match_trip(
         for row in observation_candidates.itertuples(index=False):
 
             arc_id = int(row.arc_id)
-
             distance = float(row.distance)
 
             emission_dict[arc_id] = log_emission_probability(
@@ -152,8 +137,10 @@ def map_match_trip(
         emission_log_probs.append(emission_dict)
 
     # --------------------------------------------------
-    # STEP 4: Prepare projected road geometries and graph
+    # STEP 4: Build projected road geometries and graph
     # --------------------------------------------------
+
+    print("[HMM] Building road graph and geometries...", flush=True)
 
     track_projected, nodes_projected, projection = project_trip(
         trip["track"],
@@ -172,7 +159,6 @@ def map_match_trip(
 
     graph, arc_lookup = load_road_graph(trip)
 
-    # Create a lookup for GPS observations.
     gps_lookup = {
         int(row.obs_idx): row
         for row in track.itertuples(index=False)
@@ -184,14 +170,45 @@ def map_match_trip(
     }
 
     # --------------------------------------------------
-    # STEP 5: Calculate transition log probabilities
+    # STEP 5: Precompute candidate positions
     # --------------------------------------------------
+
+    print("[HMM] Precomputing candidate positions...", flush=True)
+
+    position_lookup = {}
+
+    for t, obs_id in enumerate(observation_ids):
+
+        projected_gps = projected_gps_lookup[obs_id]
+
+        gps_x = float(projected_gps.x)
+        gps_y = float(projected_gps.y)
+
+        position_dict = {}
+
+        for arc_id in states_by_time[t]:
+
+            geometry = geometry_lookup[arc_id]
+
+            position_dict[arc_id] = geometry.project(
+                Point(gps_x, gps_y)
+            )
+
+        position_lookup[obs_id] = position_dict
+
+    # --------------------------------------------------
+    # STEP 6: Calculate transition probabilities
+    # --------------------------------------------------
+
+    print("[HMM] Calculating transition probabilities...", flush=True)
+
+    transition_start = time.time()
 
     transition_log_probs = []
 
-    # Cache connecting distances so repeated arc pairs
-    # do not require repeated Dijkstra searches.
     connecting_distance_cache = {}
+
+    total_transitions = len(observation_ids) - 1
 
     for t in range(1, len(observation_ids)):
 
@@ -201,7 +218,6 @@ def map_match_trip(
         previous_gps = gps_lookup[previous_obs_id]
         current_gps = gps_lookup[current_obs_id]
 
-        # Straight-line distance between GPS observations.
         straight_distance = gps_distance_m(
             float(previous_gps.lon),
             float(previous_gps.lat),
@@ -209,40 +225,22 @@ def map_match_trip(
             float(current_gps.lat)
         )
 
-        previous_projected = projected_gps_lookup[
-            previous_obs_id
-        ]
-
-        current_projected = projected_gps_lookup[
-            current_obs_id
-        ]
-
-        previous_x = float(previous_projected.x)
-        previous_y = float(previous_projected.y)
-
-        current_x = float(current_projected.x)
-        current_y = float(current_projected.y)
+        previous_positions = position_lookup[previous_obs_id]
+        current_positions = position_lookup[current_obs_id]
 
         transition_dict = {}
 
-        # Consider every previous/current candidate pair.
         for previous_arc in states_by_time[t - 1]:
 
+            previous_position = previous_positions[previous_arc]
             previous_geometry = geometry_lookup[previous_arc]
-
-            previous_position = previous_geometry.project(
-                Point(previous_x, previous_y)
-            )
 
             for current_arc in states_by_time[t]:
 
+                current_position = current_positions[current_arc]
                 current_geometry = geometry_lookup[current_arc]
 
-                current_position = current_geometry.project(
-                    Point(current_x, current_y)
-                )
-
-                # CASE 1: Same directed arc.
+                # CASE 1: Same directed arc
                 if previous_arc == current_arc:
 
                     network_distance = (
@@ -254,7 +252,7 @@ def map_match_trip(
                     ):
                         network_distance = math.inf
 
-                # CASE 2: Different directed arcs.
+                # CASE 2: Different directed arcs
                 else:
 
                     cache_key = (
@@ -300,7 +298,6 @@ def map_match_trip(
                         if network_distance > max_distance_m:
                             network_distance = math.inf
 
-                # Convert distance into a log transition probability.
                 transition_log = log_transition_probability(
                     network_distance,
                     straight_distance,
@@ -313,9 +310,39 @@ def map_match_trip(
 
         transition_log_probs.append(transition_dict)
 
+        # Print progress every 10 observations.
+        if t % 10 == 0 or t == total_transitions:
+
+            print(
+                f"[HMM] Transition progress: "
+                f"{t}/{total_transitions} | "
+                f"Unique arc pairs cached: "
+                f"{len(connecting_distance_cache)}",
+                flush=True
+            )
+
+    transition_elapsed = time.time() - transition_start
+
+    print("\n[HMM] Transition calculation completed.", flush=True)
+
+    print(
+        "[HMM] Unique arc pairs cached:",
+        len(connecting_distance_cache),
+        flush=True
+    )
+
+    print(
+        "[HMM] Transition calculation time:",
+        round(transition_elapsed, 2),
+        "seconds",
+        flush=True
+    )
+
     # --------------------------------------------------
-    # STEP 6: Run Viterbi
+    # STEP 7: Run Viterbi
     # --------------------------------------------------
+
+    print("\n[HMM] Running Viterbi...", flush=True)
 
     predicted_path = viterbi(
         emission_log_probs=emission_log_probs,
@@ -324,12 +351,23 @@ def map_match_trip(
     )
 
     # --------------------------------------------------
-    # STEP 7: Return predicted arc sequence
+    # STEP 8: Return predictions
     # --------------------------------------------------
 
     predictions = pd.DataFrame({
         "obs_idx": observation_ids,
         "predicted_arc_id": predicted_path
     })
+
+    total_elapsed = time.time() - total_start
+
+    print("\n[HMM] Map matching completed.", flush=True)
+
+    print(
+        "[HMM] Total execution time:",
+        round(total_elapsed, 2),
+        "seconds",
+        flush=True
+    )
 
     return predictions

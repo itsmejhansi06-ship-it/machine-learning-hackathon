@@ -7,3 +7,11 @@ __pycache__/
 
 # Dataset files
 data/
+
+# Other generated and local files
+.DS_Store
+*.pyc
+.env
+Student folder/
+results/api.log
+results/*_eda_map.html

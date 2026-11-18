@@ -29,4 +29,5 @@ Student folder/
 
 # Generated logs and EDA maps
 results/api.log
-results/*_eda_map.html
+results/*_eda_map.htmlartifacts/untuned/KNN.joblib
+artifacts/untuned/RandomForest.joblib

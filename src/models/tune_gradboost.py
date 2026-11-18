@@ -7,7 +7,7 @@ from sklearn.ensemble import HistGradientBoostingClassifier
 from src.eval_utils import feature_cols, top1_table, SEED
 from src.models.common import load_data, run_model
 
-N_TRIALS = 40
+N_TRIALS = 10
 Path("results/plots").mkdir(parents=True, exist_ok=True)
 
 def build(c):

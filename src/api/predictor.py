@@ -1,168 +1,85 @@
-
-from pathlib import Path
-
+import os, logging
 import numpy as np
 import pandas as pd
-from pyproj import Transformer
-from shapely.geometry import LineString, Point
-from shapely.strtree import STRtree
+from src.data_loader import DATA_ROOT, load_trip
+from src.preprocessing.coordinates import project_trip
+from src.preprocessing.road_network import build_arc_geometries
+from src.preprocessing.candidates import build_candidates
+from src.features.feature_engineering import add_candidate_features
+from src.models.predict import predict_proba
 
-DATA_ROOT = Path(__file__).resolve().parents[2] / "PathSnap" / "Student folder"
-
-
-def get_utm_epsg(lon, lat):
-    zone = int((lon + 180) // 6) + 1
-    zone = max(1, min(60, zone))
-    return (32600 if lat >= 0 else 32700) + zone
+logger = logging.getLogger("PathSnap")
+USE_HMM = os.environ.get("PATHSNAP_HMM", "1") == "1"      # set PATHSNAP_HMM=0 to disable
+SPLITS = ["evaluator_test", "student_test", "train"]
 
 
 def find_trip(trip_id):
     trip_id = str(trip_id).zfill(8)
-
-    for split in ["train", "student_test"]:
-        folder = DATA_ROOT / split / trip_id
-
-        if folder.exists():
-            return folder, split
-
-    raise FileNotFoundError(
-        f"Trip {trip_id} not found in available dataset"
-    )
+    for split in SPLITS:
+        if (DATA_ROOT / split / trip_id).is_dir():
+            return trip_id, split
+    raise FileNotFoundError(f"Trip {trip_id} not found")
 
 
 def list_available_trips():
-    trips = []
-
-    for split in ["train", "student_test"]:
-        split_dir = DATA_ROOT / split
-
-        if not split_dir.exists():
-            continue
-
-        for folder in sorted(split_dir.iterdir()):
-            if folder.is_dir() and folder.name.isdigit():
-                trips.append({
-                    "trip_id": folder.name,
-                    "split": split
-                })
-
-    return trips
+    for split in ["evaluator_test", "student_test"]:        # evaluator trips first, if present
+        d = DATA_ROOT / split
+        if d.is_dir():
+            return [{"trip_id": f.name, "split": split} for f in sorted(d.iterdir()) if f.is_dir()]
+    return []
 
 
 def predict_trip(trip_id):
-    folder, split = find_trip(trip_id)
-    trip_id = folder.name
+    trip_id, split = find_trip(trip_id)
+    trip = load_trip(trip_id, split)
 
-    track_path = folder / f"{trip_id}.track"
-    nodes_path = folder / f"{trip_id}.nodes"
-    arcs_path = folder / f"{trip_id}.arcs"
+    # B: candidates + features (no route used)
+    track_p, nodes_p, _ = project_trip(trip["track"], trip["nodes"])
+    arc_geoms = build_arc_geometries(nodes_p, trip["arcs"])
+    cand = build_candidates(trip, k=10, radius=50.0)
+    if cand.empty:
+        raise ValueError("No candidate road arcs within 50 m of the GPS track")
+    cand = add_candidate_features(cand, track_p, arc_geoms)
 
-    track = pd.read_csv(track_path, sep=r"\s+", header=None)
-    nodes = pd.read_csv(nodes_path, sep=r"\s+", header=None)
-    arcs = pd.read_csv(arcs_path, sep=r"\s+", header=None)
+    # C: classifier probabilities
+    cand["p"] = predict_proba(cand)
+    best = cand.loc[cand.groupby("obs_idx")["p"].idxmax()]
+    pred = dict(zip(best.obs_idx.astype(int), best.arc_id.astype(int)))
+    method = "classifier"
 
-    gps = track.iloc[:, :2].to_numpy(dtype=float)
-    node_coords = nodes.iloc[:, :2].to_numpy(dtype=float)
-    arc_indices = arcs.iloc[:, :2].to_numpy(dtype=int)
+    # D: HMM / Viterbi
+    if USE_HMM:
+        try:
+            from src.hmm.hmm import map_match_trip
+            out = map_match_trip(trip, cand_df=cand, max_distance_m=1000)
+            pred = dict(zip(out.obs_idx.astype(int), out.predicted_arc_id.astype(int)))
+            method = "classifier+hmm"
+        except Exception as e:
+            logger.warning("HMM failed for %s, using classifier-only: %s", trip_id, e)
 
-    if len(gps) == 0 or len(arc_indices) == 0:
-        raise ValueError("Trip has no GPS observations or road arcs")
+    all_obs = trip["track"].obs_idx.astype(int).tolist()
+    seq = pd.Series(pred, dtype=float).reindex(all_obs).ffill().bfill().astype(int).to_numpy()
 
-    # Project coordinates into the appropriate UTM zone.
-    center_lon = float(np.mean(gps[:, 0]))
-    center_lat = float(np.mean(gps[:, 1]))
-    epsg = get_utm_epsg(center_lon, center_lat)
+    arcs, nodes = trip["arcs"], trip["nodes"]
+    s = seq[np.r_[True, seq[1:] != seq[:-1]]]
+    continuity = float((arcs.to_node.values[s[:-1]] == arcs.from_node.values[s[1:]]).mean()) if len(s) > 1 else 1.0
 
-    transformer = Transformer.from_crs(
-        "EPSG:4326",
-        f"EPSG:{epsg}",
-        always_xy=True
-    )
+    # Server-side scoring only, after prediction: share of GPS points matched to an arc on the reference route
+    top1 = None
+    if trip["route"] is not None:
+        on_route = set(np.asarray(trip["route"]).tolist())
+        top1 = float(np.mean([a in on_route for a in seq]))
 
-    gps_x, gps_y = transformer.transform(
-        gps[:, 0], gps[:, 1]
-    )
-    node_x, node_y = transformer.transform(
-        node_coords[:, 0], node_coords[:, 1]
-    )
-
-    projected_nodes = np.column_stack([node_x, node_y])
-    projected_gps = np.column_stack([gps_x, gps_y])
-
-    # Construct road segments.
-    valid = (
-        (arc_indices[:, 0] >= 0) &
-        (arc_indices[:, 1] >= 0) &
-        (arc_indices[:, 0] < len(projected_nodes)) &
-        (arc_indices[:, 1] < len(projected_nodes))
-    )
-
-    valid_arcs = arc_indices[valid]
-
-    if len(valid_arcs) == 0:
-        raise ValueError("No valid road arcs found")
-
-    lines = [
-        LineString([
-            projected_nodes[u],
-            projected_nodes[v]
-        ])
-        for u, v in valid_arcs
-    ]
-
-    tree = STRtree(lines)
-
-    predicted_arc_indices = []
-
-    # Temporary nearest-arc prediction.
-    for x, y in projected_gps:
-        nearest_index = int(tree.nearest(Point(x, y)))
-        predicted_arc_indices.append(nearest_index)
-
-    # Calculate route continuity.
-    connected = 0
-    total_transitions = max(
-        0, len(predicted_arc_indices) - 1
-    )
-
-    for i in range(total_transitions):
-        current_arc = valid_arcs[predicted_arc_indices[i]]
-        next_arc = valid_arcs[predicted_arc_indices[i + 1]]
-
-        if current_arc[1] == next_arc[0]:
-            connected += 1
-
-    continuity = (
-        connected / total_transitions
-        if total_transitions else 1.0
-    )
-
-    # Build predicted route coordinates.
     pred_coords = []
+    for a in s:
+        for n in (arcs.from_node.values[a], arcs.to_node.values[a]):
+            c = [float(nodes.lon.values[n]), float(nodes.lat.values[n])]
+            if not pred_coords or pred_coords[-1] != c:
+                pred_coords.append(c)
 
-    for index in predicted_arc_indices:
-        u, v = valid_arcs[index]
-
-        for node_id in [u, v]:
-            coord = [
-                float(node_coords[node_id, 0]),
-                float(node_coords[node_id, 1])
-            ]
-
-            if not pred_coords or coord != pred_coords[-1]:
-                pred_coords.append(coord)
-
-    gps_coords = [
-        [float(lon), float(lat)]
-        for lon, lat in gps
-    ]
-
-    return {
-        "trip_id": trip_id,
-        "pred_coords": pred_coords,
-        "gps_coords": gps_coords,
-        "top1_acc": None,
-        "continuity": float(continuity),
-        "split": split
-    }
-
+    logger.info("trip %s | %s | %d points | on-route acc %s | continuity %.3f",
+                trip_id, method, len(seq), None if top1 is None else round(top1, 4), continuity)
+    return {"trip_id": trip_id, "split": split, "method": method,
+            "pred_coords": pred_coords,
+            "gps_coords": trip["track"][["lon", "lat"]].values.tolist(),
+            "top1_acc": top1, "continuity": continuity}

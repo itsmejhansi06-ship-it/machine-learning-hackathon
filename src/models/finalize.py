@@ -17,8 +17,7 @@ card = dict(model=FINAL, family="HistGradientBoostingClassifier (sklearn)",
             selection_metric="student-test observation-level Top-1 accuracy (secondary: log loss)",
             student_test=dict(top1=runs.loc[FINAL, "test_top1_acc"], macro_f1=runs.loc[FINAL, "test_macro_f1"],
                               log_loss=runs.loc[FINAL, "test_log_loss"], continuity=runs.loc[FINAL, "test_continuity"]),
-            candidate_generation=dict(radius_m=50, max_candidates=8, crs="EPSG:32636"))
-json.dump(card, open("artifacts/model_card.json", "w"), indent=2, default=float)
+            candidate_generation=dict(radius_m=50, max_candidates=10, crs="per-trip UTM zone (src/preprocessing/coordinates.py)"),json.dump(card, open("artifacts/model_card.json", "w"), indent=2, default=float)
 
 # 2. tuned vs untuned table (report section 4)
 metrics = {"cv_macro_f1_mean": "CV Macro-F1", "cv_top1_acc_mean": "CV Top-1",

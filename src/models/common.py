@@ -2,10 +2,24 @@ import sys, time, joblib, numpy as np, pandas as pd
 from pathlib import Path
 sys.path.insert(0, ".")
 from src.eval_utils import *
+from src.models.features import K_MAX, add_model_features
 
-def load_data():
-    train = pd.read_parquet("data/features_train.parquet")
-    test = pd.read_parquet("data/features_student_test.parquet")
+MAX_TRIP_MISS = 0.30 
+
+def _prepare(df):
+    df = df[df.distance_rank <= K_MAX]                 # keep the K_MAX nearest candidates
+    return add_model_features(df).reset_index(drop=True)
+
+def load_data(exclude_bad_trips=True):
+    train = _prepare(pd.read_parquet("data/processed/train_features.parquet"))
+    test = _prepare(pd.read_parquet("data/processed/student_test_features.parquet"))
+    if exclude_bad_trips:
+        miss = 1 - train.groupby(["trip", "obs_idx"]).label.max().groupby("trip").mean()
+        bad = sorted(miss[miss > MAX_TRIP_MISS].index)
+        if bad:
+            print(f"Excluding training trips with label miss rate > {MAX_TRIP_MISS:.0%}: "
+                  f"{ {t: round(miss[t], 3) for t in bad} }")
+        train = train[~train.trip.isin(bad)].reset_index(drop=True)
     return train, test
 
 def run_model(name, family, cfg, builder, out_dir="artifacts/untuned"):

@@ -5,14 +5,15 @@ from sklearn.metrics import (accuracy_score, precision_score, recall_score,
                              f1_score, log_loss, confusion_matrix)
 from sklearn.model_selection import GroupKFold
 from src.data_loader import load_arcs
+from src.models.features import FEATURES
 
 SEED = 42
-META = ["split", "trip", "obs_idx", "arc_id", "label", "t"]
+META = ["split", "trip", "obs_idx", "arc_id", "label", "t", "projection_epsg"]
 RUNS = Path("results/model_runs.csv")
 _load_arcs = lru_cache(maxsize=None)(load_arcs)
 
-def feature_cols(df):
-    return [c for c in df.columns if c not in META]
+def feature_cols(df=None):
+    return list(FEATURES)
 
 def top1_table(df, p):
     """Highest-scoring candidate per GPS observation."""

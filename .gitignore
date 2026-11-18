@@ -1,10 +1,23 @@
+# macOS
 .DS_Store
+
+# Python virtual environments
 .venv/
+PathSnap/.venv/
+
+# Python cache
 __pycache__/
 *.pyc
+
+# Environment variables
 .env
 
-# Local datasets and generated files
+# Local datasets
 Student folder/
+PathSnap/
+
+# Runtime logs
 results/api.log
+
+# Generated Folium maps
 results/*_eda_map.html

@@ -7,8 +7,7 @@ from pyproj import Transformer
 from shapely.geometry import LineString, Point
 from shapely.strtree import STRtree
 
-
-DATA_ROOT = Path(__file__).resolve().parents[2] / "Student folder"
+DATA_ROOT = Path(__file__).resolve().parents[2] / "PathSnap" / "Student folder"
 
 
 def get_utm_epsg(lon, lat):

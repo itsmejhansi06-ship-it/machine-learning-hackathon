@@ -1,0 +1,9 @@
+numpy
+pandas
+pyproj
+shapely>=2.0
+scikit-learn
+pyarrow
+matplotlib
+folium
+networkx

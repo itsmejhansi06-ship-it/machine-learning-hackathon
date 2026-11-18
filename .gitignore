@@ -1,0 +1,27 @@
+
+# Python virtual environment
+.venv/
+venv/
+__pycache__/
+*.py[cod]
+
+# Data and datasets
+data/raw/
+data/processed/
+*.track
+*.nodes
+*.arcs
+*.route
+
+# Python testing
+.pytest_cache/
+.coverage
+htmlcov/
+
+# IDE files
+.vscode/
+.idea/
+
+# OS files
+.DS_Store
+Thumbs.db
